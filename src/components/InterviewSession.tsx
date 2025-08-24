@@ -5,8 +5,9 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { 
   Mic, MicOff, Video, VideoOff, Phone, Clock, Brain, 
-  MessageSquare, RotateCcw, CheckCircle, AlertCircle 
+  MessageSquare, RotateCcw, CheckCircle, AlertCircle, Loader2 
 } from 'lucide-react';
+import { generateInterviewQuestions, InterviewQuestion } from '@/services/interviewService';
 
 interface InterviewSessionProps {
   config: any;
@@ -34,40 +35,68 @@ const InterviewSession = ({ config, onEndInterview }: InterviewSessionProps) => 
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [currentAnswer, setCurrentAnswer] = useState('');
   const [isAnswering, setIsAnswering] = useState(false);
+  const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(true);
+  const [questionsError, setQuestionsError] = useState<string | null>(null);
 
-  // Mock questions based on interview type
-  const questions = [
-    {
-      id: 1,
-      type: 'opening',
-      question: "Hello! I'm your AI interviewer. Can you start by telling me about yourself and what brings you here today?",
-      expectedDuration: 180
-    },
-    {
-      id: 2,
-      type: 'behavioral',
-      question: "Tell me about a time when you had to overcome a significant challenge at work. How did you approach it?",
-      expectedDuration: 240
-    },
-    {
-      id: 3,
-      type: 'technical',
-      question: "How would you explain your technical skills and experience relevant to this role?",
-      expectedDuration: 300
-    },
-    {
-      id: 4,
-      type: 'situational',
-      question: "Imagine you're working on a project with a tight deadline, but you discover a major issue. What would you do?",
-      expectedDuration: 180
-    },
-    {
-      id: 5,
-      type: 'closing',
-      question: "Do you have any questions about the role or our company? And is there anything else you'd like to share?",
-      expectedDuration: 120
-    }
-  ];
+  // Load AI-generated questions on component mount
+  useEffect(() => {
+    const loadQuestions = async () => {
+      try {
+        setIsLoadingQuestions(true);
+        setQuestionsError(null);
+        
+        const result = await generateInterviewQuestions({
+          category: config.type || 'technical',
+          role: config.role || 'Software Engineer',
+          experience: config.experience || 'mid',
+          duration: parseInt(config.duration) || 30,
+          focus: config.focus || []
+        });
+
+        if (result.success) {
+          setQuestions(result.questions);
+        } else {
+          throw new Error(result.error || 'Failed to generate questions');
+        }
+      } catch (error) {
+        console.error('Error loading questions:', error);
+        setQuestionsError(error instanceof Error ? error.message : 'Failed to load questions');
+        
+        // Fallback to default questions
+        setQuestions([
+          {
+            id: 1,
+            type: 'opening',
+            question: "Hello! I'm your AI interviewer. Can you start by telling me about yourself and what brings you here today?",
+            expectedDuration: 180,
+            difficulty: 'easy',
+            tags: ['introduction']
+          },
+          {
+            id: 2,
+            type: 'behavioral',
+            question: "Tell me about a time when you had to overcome a significant challenge at work. How did you approach it?",
+            expectedDuration: 240,
+            difficulty: 'medium',
+            tags: ['problem-solving']
+          },
+          {
+            id: 3,
+            type: 'technical',
+            question: "How would you explain your technical skills and experience relevant to this role?",
+            expectedDuration: 300,
+            difficulty: 'medium',
+            tags: ['technical']
+          }
+        ]);
+      } finally {
+        setIsLoadingQuestions(false);
+      }
+    };
+
+    loadQuestions();
+  }, [config]);
 
   const totalQuestions = questions.length;
   const progress = ((currentQuestion + 1) / totalQuestions) * 100;
@@ -125,6 +154,31 @@ const InterviewSession = ({ config, onEndInterview }: InterviewSessionProps) => 
     onEndInterview(mockResults);
   };
 
+  if (isLoadingQuestions) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+          <h2 className="text-xl font-semibold">Generating AI Interview Questions</h2>
+          <p className="text-muted-foreground">Creating personalized questions for your {config.type} interview...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (questionsError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4 max-w-md">
+          <AlertCircle className="h-8 w-8 text-destructive mx-auto" />
+          <h2 className="text-xl font-semibold">Question Generation Error</h2>
+          <p className="text-muted-foreground">{questionsError}</p>
+          <p className="text-sm text-muted-foreground">Using fallback questions for your interview.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -137,6 +191,9 @@ const InterviewSession = ({ config, onEndInterview }: InterviewSessionProps) => 
                 <span className="text-sm font-medium">Recording</span>
               </div>
               <Badge variant="outline">{config.type} Interview</Badge>
+              {questionsError && (
+                <Badge variant="destructive" className="text-xs">Fallback Questions</Badge>
+              )}
             </div>
             
             <div className="flex items-center gap-6">
